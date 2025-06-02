@@ -1,47 +1,58 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../controllers/game_controller.dart';
 import '../widgets/game_options_widget.dart';
 import '../widgets/game_info_widget.dart';
 import '../widgets/number_display_widget.dart';
+import '../../core/utils/responsive_helper.dart';
+import '../../core/utils/animation_helper.dart';
 
 class GameScreen extends StatefulWidget {
-  final GameController controller;
-
-  const GameScreen({
-    super.key,
-    required this.controller,
-  });
+  const GameScreen({super.key});
 
   @override
   State<GameScreen> createState() => GameScreenState();
 }
 
-class GameScreenState extends State<GameScreen> {
-  late GameController _controller;
+class GameScreenState extends State<GameScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _fadeController;
+  late AnimationController _slideController;
+  late AnimationController _scaleController;
 
   @override
   void initState() {
     super.initState();
-    _controller = widget.controller;
-    // Listen to state changes
-    _controller.addListener(() {
-      if (mounted) setState(() {});
-    });
-    
-    // Seviye değişimini dinle
-    _controller.setOnLevelChangeListener((newLevel) {
-      if (mounted) {
-        _showLevelUpMessage(newLevel);
-      }
-    });
+    _initializeAnimations();
+  }
+
+  void _initializeAnimations() {
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+    _slideController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+
+    _fadeController.forward();
+    _slideController.forward();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _fadeController.dispose();
+    _slideController.dispose();
+    _scaleController.dispose();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -51,37 +62,43 @@ class GameScreenState extends State<GameScreen> {
       ),
       backgroundColor: Colors.blueGrey,
       body: Center(
-        child: _controller.gameStarted
+        child: _controller.isGameActive
             ? Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   GameInfoWidget(
-                    score: _controller.score,
-                    level: _controller.level,
+                    score: _controller.state.score,
+                    level: _controller.state.level,
                   ),
                   const SizedBox(height: 40),
-                  if (_controller.currentNumberIndex < _controller.numbersToShow.length)
+                  if (_controller.isShowingNumbers)
                     NumberDisplayWidget(
-                      number: _controller.numbersToShow[_controller.currentNumberIndex],
+                      number: _controller.state.numbersToShow.isNotEmpty && 
+                              _controller.state.currentNumberIndex < _controller.state.numbersToShow.length
+                          ? _controller.state.numbersToShow[_controller.state.currentNumberIndex]
+                          : 0,
                     )
-                  else
+                  else if (_controller.isWaitingForAnswer)
                     GameOptionsWidget(
-                      options: _controller.options,
-                      onOptionSelected: (option) => _controller.checkAnswer(option),
-                    ),
+                      options: _controller.state.options,
+                      onOptionSelected: (option) => _controller.selectAnswer(option),
+                    )
+                  else if (_controller.isLevelCompleted)
+                    _buildLevelCompletedWidget()
+                  else if (_controller.isShowingResult)
+                    _buildResultWidget(),
                 ],
               )
             : _buildStartScreen(),
       ),
     );
   }
-
   Widget _buildStartScreen() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          'Seviye ${_controller.level} hazır mısınız?',
+          'Seviye ${_controller.state.level} hazır mısınız?',
           style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 20),
@@ -93,25 +110,62 @@ class GameScreenState extends State<GameScreen> {
     );
   }
 
-  void _showLevelUpMessage(int newLevel) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Tebrikler!'),
-          content: Text('Seviye $newLevel hazır mısınız?'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _controller.continueToNextLevel();
-              },
-              child: const Text('Devam'),
-            ),
-          ],
-        );
-      },
+  Widget _buildResultWidget() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          _controller.state.isAnswerCorrect ? Icons.check_circle : Icons.cancel,
+          color: _controller.state.isAnswerCorrect ? Colors.green : Colors.red,
+          size: 100,
+        ),
+        const SizedBox(height: 20),
+        Text(
+          _controller.state.isAnswerCorrect ? 'Doğru!' : 'Yanlış!',
+          style: TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: _controller.state.isAnswerCorrect ? Colors.green : Colors.red,
+          ),
+        ),
+        if (!_controller.state.isAnswerCorrect && _controller.state.correctAnswer != null)
+          Text(
+            'Doğru cevap: ${_controller.state.correctAnswer}',
+            style: const TextStyle(fontSize: 24),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLevelCompletedWidget() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(
+          Icons.emoji_events,
+          color: Colors.yellow,
+          size: 100,
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'Seviye ${_controller.state.level} Tamamlandı!',
+          style: const TextStyle(
+            fontSize: 32,
+            fontWeight: FontWeight.bold,
+            color: Colors.yellow,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'Skor: ${_controller.state.score}',
+          style: const TextStyle(fontSize: 24),
+        ),
+        const SizedBox(height: 20),
+        ElevatedButton(
+          onPressed: _controller.nextLevel,
+          child: const Text('Sonraki Seviye', style: TextStyle(fontSize: 20)),
+        ),
+      ],
     );
   }
 }

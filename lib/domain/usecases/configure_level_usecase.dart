@@ -1,31 +1,45 @@
 import '../entities/game_state.dart';
 
 class ConfigureLevelUseCase {
-  GameState execute(GameState state) {
-    int timeLimit;
-    int displayDuration;
+  GameState execute(GameState state, int newLevel) {
+    // Yeni seviyeye geçerken istatistikleri güncelle
+    var newStatistics = state.statistics;
     
-    switch (state.level) {
-      case 1:
-        timeLimit = 5;
-        displayDuration = 4000;
-        break;
-      case 2:
-        timeLimit = 4;
-        displayDuration = 6500;
-        break;
-      case 3:
-        timeLimit = 3;
-        displayDuration = 8000;
-        break;
-      default:
-        timeLimit = 3;
-        displayDuration = 2000;
+    // Eğer önceki seviye mükemmeldi, bunu kaydet
+    if (state.isPerfectLevel && state.level > 0) {
+      newStatistics = newStatistics.copyWith(
+        perfectLevels: newStatistics.perfectLevels + 1,
+        levelScores: {
+          ...newStatistics.levelScores,
+          state.level: state.score,
+        },
+      );
     }
     
     return state.copyWith(
-      timeLimit: timeLimit,
-      displayDuration: displayDuration,
+      level: newLevel,
+      questionsInCurrentLevel: 0,
+      correctAnswersInLevel: 0,
+      statistics: newStatistics,
+      phase: GamePhase.initial,
+      numbersToShow: [],
+      options: [],
+      correctAnswer: null,
+      selectedAnswer: null,
+      isAnswerCorrect: false,
     );
+  }
+  
+  // Seviye ayarlarını al
+  static int getTimeLimit(int level) {
+    if (level <= 3) return 10 - level;
+    if (level <= 6) return 7 - (level - 3);
+    return 3;
+  }
+  
+  static int getDisplayDuration(int level) {
+    if (level <= 3) return 3000 + (level * 500);
+    if (level <= 6) return 4500 + ((level - 3) * 1000);
+    return 8000;
   }
 }
